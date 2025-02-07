@@ -1,9 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { styles } from './styles';
 import axios from 'axios';
+import debounce from 'lodash/debounce';
 
 interface Advocate {
+  id: number;
   firstName: string;
   lastName: string;
   city: string;
@@ -13,56 +15,76 @@ interface Advocate {
   phoneNumber: string;
 }
 
+interface PaginationData {
+  total: number;
+  page: number;
+  totalPages: number;
+  hasMore: boolean;
+}
+
 export default function Home() {
   const [advocates, setAdvocates] = useState<Advocate[]>([]);
   const [filteredAdvocates, setFilteredAdvocates] = useState<Advocate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [pagination, setPagination] = useState<PaginationData>({
+    total: 0,
+    page: 1,
+    totalPages: 1,
+    hasMore: false
+  });
+
+  const debouncedSearch = useCallback(
+    debounce((term: string) => {
+      setSearchTerm(term);
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }, 300),
+    []
+  );
+
+  const fetchAdvocates = async (page: number, search: string) => {
+    try {
+      setIsLoading(true);
+      const { data } = await axios.get('/api/advocates', {
+        params: {
+          page,
+          search
+        }
+      });
+      setAdvocates(data.data);
+      setFilteredAdvocates(data.data);
+      setPagination(data.pagination);
+    } catch (err) {
+      setError(
+        axios.isAxiosError(err) 
+          ? err.response?.data?.message || err.message
+          : 'Failed to fetch advocates'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchAdvocates = async () => {
-      try {
-        const { data: { data } } = await axios.get('/api/advocates');
-        setAdvocates(data);
-        setFilteredAdvocates(data);
-      } catch (err) {
-        setError(
-          axios.isAxiosError(err) 
-            ? err.response?.data?.message || err.message
-            : 'Failed to fetch advocates'
-        );
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchAdvocates();
-  }, []);
+    fetchAdvocates(pagination.page, searchTerm);
+  }, [pagination.page, searchTerm]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newSearchTerm = e.target.value.toLowerCase();
-    setSearchTerm(newSearchTerm);
+    const newValue = e.target.value.toLowerCase();
+    setInputValue(newValue);
+    debouncedSearch(newValue);
+  };
 
-    const filtered = advocates.filter((advocate) => {
-      return (
-        advocate.firstName.toLowerCase().includes(newSearchTerm) ||
-        advocate.lastName.toLowerCase().includes(newSearchTerm) ||
-        advocate.city.toLowerCase().includes(newSearchTerm) ||
-        advocate.degree.toLowerCase().includes(newSearchTerm) ||
-        advocate.specialties.some(specialty => 
-          specialty.toLowerCase().includes(newSearchTerm)
-        ) ||
-        advocate.yearsOfExperience.toString().includes(newSearchTerm)
-      );
-    });
-
-    setFilteredAdvocates(filtered);
+  const handlePageChange = (newPage: number) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
   };
 
   const handleReset = () => {
+    setInputValue('');
     setSearchTerm('');
-    setFilteredAdvocates(advocates);
+    setPagination(prev => ({ ...prev, page: 1 }));
   };
 
   return (
@@ -73,16 +95,38 @@ export default function Home() {
         <p className={styles.searchTerm}>
           Searching for: <span id="search-term">{searchTerm}</span>
         </p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input 
-            className={styles.searchInput} 
-            onChange={handleSearch}
-            value={searchTerm}
-            placeholder="Search advocates..."
-          />
-          <button className={styles.resetButton} onClick={handleReset}>
-            Reset Search
-          </button>
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+            <input 
+              className={styles.searchInput} 
+              onChange={handleSearch}
+              value={inputValue}
+              placeholder="Search advocates..."
+            />
+            <button className={styles.resetButton} onClick={handleReset}>
+              Reset Search
+            </button>
+          </div>
+
+          <div className={styles.pagination}>
+            <button
+              className={styles.paginationButton}
+              onClick={() => handlePageChange(pagination.page - 1)}
+              disabled={pagination.page === 1}
+            >
+              ← Previous
+            </button>
+            <span className={styles.paginationInfo}>
+              Page {pagination.page} of {pagination.totalPages}
+            </span>
+            <button
+              className={styles.paginationButton}
+              onClick={() => handlePageChange(pagination.page + 1)}
+              disabled={!pagination.hasMore}
+            >
+              Next →
+            </button>
+          </div>
         </div>
       </div>
 

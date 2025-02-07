@@ -3,24 +3,10 @@ import { useEffect, useState, useCallback } from "react";
 import { styles } from './styles';
 import axios from 'axios';
 import debounce from 'lodash/debounce';
-
-interface Advocate {
-  id: number;
-  firstName: string;
-  lastName: string;
-  city: string;
-  degree: string;
-  specialties: string[];
-  yearsOfExperience: string;
-  phoneNumber: string;
-}
-
-interface PaginationData {
-  total: number;
-  page: number;
-  totalPages: number;
-  hasMore: boolean;
-}
+import { AdvocatesTable } from '../components/AdvocatesTable';
+import { Advocate } from '../types/advocate';
+import { PaginationData } from '../types/pagination';
+import { SearchBar } from '../components/SearchBar';
 
 export default function Home() {
   const [advocates, setAdvocates] = useState<Advocate[]>([]);
@@ -44,19 +30,22 @@ export default function Home() {
     []
   );
 
-  const fetchAdvocates = async (page: number, search: string) => {
+  const fetchAdvocates = async (page: number, search: string, signal: AbortSignal) => {
     try {
       setIsLoading(true);
       const { data } = await axios.get('/api/advocates', {
         params: {
           page,
           search
-        }
+        },
+        signal
       });
       setAdvocates(data.data);
       setFilteredAdvocates(data.data);
       setPagination(data.pagination);
     } catch (err) {
+      if (axios.isAxiosError(err) && err.name === 'CanceledError') return;
+      
       setError(
         axios.isAxiosError(err) 
           ? err.response?.data?.message || err.message
@@ -68,7 +57,9 @@ export default function Home() {
   };
 
   useEffect(() => {
-    fetchAdvocates(pagination.page, searchTerm);
+    const controller = new AbortController();
+    fetchAdvocates(pagination.page, searchTerm, controller.signal);
+    return () => controller.abort();
   }, [pagination.page, searchTerm]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,45 +81,14 @@ export default function Home() {
   return (
     <main className={styles.container}>
       <h1 className={styles.heading}>Solace Advocates</h1>
-      <div className={styles.searchSection}>
-        <p className={styles.searchLabel}>Search</p>
-        <p className={styles.searchTerm}>
-          Searching for: <span id="search-term">{searchTerm}</span>
-        </p>
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-            <input 
-              className={styles.searchInput} 
-              onChange={handleSearch}
-              value={inputValue}
-              placeholder="Search advocates..."
-            />
-            <button className={styles.resetButton} onClick={handleReset}>
-              Reset Search
-            </button>
-          </div>
-
-          <div className={styles.pagination}>
-            <button
-              className={styles.paginationButton}
-              onClick={() => handlePageChange(pagination.page - 1)}
-              disabled={pagination.page === 1}
-            >
-              ← Previous
-            </button>
-            <span className={styles.paginationInfo}>
-              Page {pagination.page} of {pagination.totalPages}
-            </span>
-            <button
-              className={styles.paginationButton}
-              onClick={() => handlePageChange(pagination.page + 1)}
-              disabled={!pagination.hasMore}
-            >
-              Next →
-            </button>
-          </div>
-        </div>
-      </div>
+      <SearchBar 
+        inputValue={inputValue}
+        searchTerm={searchTerm}
+        onSearch={handleSearch}
+        onReset={handleReset}
+        pagination={pagination}
+        onPageChange={handlePageChange}
+      />
 
       {isLoading ? (
         <div className={styles.loadingContainer}>
@@ -152,75 +112,7 @@ export default function Home() {
           </div>
         </div>
       ) : (
-        <>
-          {/* Desktop Table */}
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th className={styles.tableHeader}>First Name</th>
-                <th className={styles.tableHeader}>Last Name</th>
-                <th className={styles.tableHeader}>City</th>
-                <th className={styles.tableHeader}>Degree</th>
-                <th className={styles.tableHeader}>Specialties</th>
-                <th className={styles.tableHeader + " text-right"}>Years of Experience</th>
-                <th className={styles.tableHeader + " text-right"}>Phone Number</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAdvocates.map((advocate) => (
-                <tr className={styles.tableRow}>
-                  <td className={styles.tableCell}>{advocate.firstName}</td>
-                  <td className={styles.tableCell}>{advocate.lastName}</td>
-                  <td className={styles.tableCell}>{advocate.city}</td>
-                  <td className={styles.tableCell}>{advocate.degree}</td>
-                  <td className={styles.tableCell}>
-                    {advocate.specialties.map((s) => (
-                      <div className={styles.specialtyItem}>{s}</div>
-                    ))}
-                  </td>
-                  <td className={styles.tableCell + " text-right"}>{advocate.yearsOfExperience}</td>
-                  <td className={styles.tableCell + " text-right"}>{advocate.phoneNumber}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {/* Mobile Cards */}
-          <div className={styles.mobileCards}>
-            {filteredAdvocates.map((advocate) => (
-              <div className={styles.mobileCard}>
-                <div className={styles.mobileCardField}>
-                  <span className={styles.mobileCardLabel}>Name</span>
-                  <span className={styles.mobileCardValue}>{advocate.firstName} {advocate.lastName}</span>
-                </div>
-                <div className={styles.mobileCardField}>
-                  <span className={styles.mobileCardLabel}>City</span>
-                  <span className={styles.mobileCardValue}>{advocate.city}</span>
-                </div>
-                <div className={styles.mobileCardField}>
-                  <span className={styles.mobileCardLabel}>Degree</span>
-                  <span className={styles.mobileCardValue}>{advocate.degree}</span>
-                </div>
-                <div className={styles.mobileCardField}>
-                  <span className={styles.mobileCardLabel}>Years of Experience</span>
-                  <span className={styles.mobileCardValue}>{advocate.yearsOfExperience}</span>
-                </div>
-                <div className={styles.mobileCardField}>
-                  <span className={styles.mobileCardLabel}>Phone</span>
-                  <span className={styles.mobileCardValue}>{advocate.phoneNumber}</span>
-                </div>
-                <div className={styles.mobileCardField}>
-                  <span className={styles.mobileCardLabel}>Specialties</span>
-                  <div className="flex flex-wrap justify-end gap-1">
-                    {advocate.specialties.map((s) => (
-                      <div className={styles.specialtyItem}>{s}</div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+        <AdvocatesTable advocates={filteredAdvocates} />
       )}
     </main>
   );

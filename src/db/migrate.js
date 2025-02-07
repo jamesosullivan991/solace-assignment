@@ -1,27 +1,47 @@
 const { drizzle } = require("drizzle-orm/postgres-js");
 const { migrate } = require("drizzle-orm/postgres-js/migrator");
 const postgres = require("postgres");
+require('dotenv').config();
 
 const runMigration = async () => {
-  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set");
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL environment variable is not set");
+  }
 
-  console.log(process.env.DATABASE_URL);
+  let sql;
+  try {
+    sql = postgres(databaseUrl, { 
+      max: 1,
+      ssl: process.env.NODE_ENV === 'production',
+    });
 
-  const sql = postgres(process.env.DATABASE_URL, { max: 1 });
-  const db = drizzle(sql);
-  await migrate(db, { migrationsFolder: "drizzle" });
-  await sql.end();
+    const db = drizzle(sql);
+    console.log('Starting database migration...');
+    
+    await migrate(db, { 
+      migrationsFolder: "drizzle",
+      migrationsTable: "migrations" 
+    });
+    
+    console.log('Migration completed successfully');
+  } catch (error) {
+    console.error('Migration failed:', error.message);
+    throw error;
+  } finally {
+    if (sql) {
+      await sql.end();
+      console.log('Database connection closed');
+    }
+  }
 };
 
-runMigration()
-  .then(() => {
-    console.log("Successfully ran migration.");
-
+(async () => {
+  try {
+    await runMigration();
     process.exit(0);
-  })
-  .catch((e) => {
-    console.error("Failed to run migration.");
-    console.error(e);
-
+  } catch (error) {
+    console.error('Migration script failed:', error);
     process.exit(1);
-  });
+  }
+})();
